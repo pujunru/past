@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Past.Infrastructure.Interop;
 using Past.Services;
 using Windows.Graphics;
 using Windows.System;
@@ -103,17 +104,15 @@ public sealed partial class OverlayWindow : Window
             AppWindow.Show();
             Activate();
 
-            // WinUI doesn't reliably take foreground from Activate() when shown from a
-            // global hotkey, so force it via the Win32 handle.
-            SetForegroundWindow(_selfHwnd);
+            // Activate() alone does not reliably give a hotkey-shown window keyboard focus:
+            // Windows refuses foreground to a background process, so Esc/arrows would go to
+            // the app underneath. ForceForeground works around the foreground lock.
+            ForegroundApp.ForceForeground(_selfHwnd);
 
             // Land on the first card, not the search box: the common case is "grab the last
             // thing I copied", which should be one Enter away. Typing still searches (see
             // OnListCharacterReceived).
-            if (ResultsList.Items.Count > 0)
-                ResultsList.Focus(FocusState.Programmatic);
-            else
-                SearchBox.Focus(FocusState.Programmatic);
+            FocusFirstCard();
 
             _shownAtUtc = DateTime.UtcNow; // restart the grace window once actually up
         }
@@ -123,7 +122,43 @@ public sealed partial class OverlayWindow : Window
         }
     }
 
+    /// <summary>
+    /// Put keyboard focus on the first card.
+    /// <para>
+    /// ListView.Focus() fails right after ItemsSource is set, because the item containers
+    /// have not been realized yet. WinUI then parks focus on whatever else is focusable —
+    /// in practice the close button — which handles neither Esc nor arrow keys, so the
+    /// overlay looked completely unresponsive. Force a layout pass first, then focus the
+    /// real container.
+    /// </para>
+    /// </summary>
+    private void FocusFirstCard()
+    {
+        if (ResultsList.Items.Count == 0)
+        {
+            SearchBox.Focus(FocusState.Programmatic);
+            return;
+        }
+
+        ResultsList.UpdateLayout(); // realize containers so one of them can take focus
+
+        if (ResultsList.ContainerFromIndex(0) is ListViewItem first &&
+            first.Focus(FocusState.Programmatic))
+            return;
+
+        if (!ResultsList.Focus(FocusState.Programmatic))
+            SearchBox.Focus(FocusState.Programmatic);
+    }
+
     private void Hide() => AppWindow.Hide();
+
+    // Escape is handled at the panel root so it closes the overlay no matter where focus
+    // sits, rather than relying on every control's KeyDown.
+    private void OnEscapeAccelerator(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        Hide();
+        args.Handled = true;
+    }
 
     // Click-outside-to-dismiss.
     private void OnActivated(object sender, WindowActivatedEventArgs e)
@@ -363,9 +398,6 @@ public sealed partial class OverlayWindow : Window
 
     [DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(nint hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool SetForegroundWindow(nint hWnd);
 
     [StructLayout(LayoutKind.Sequential)]
     private struct POINT { public int X; public int Y; }

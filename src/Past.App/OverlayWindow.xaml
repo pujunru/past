@@ -9,6 +9,10 @@
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
             BorderThickness="1"
             CornerRadius="12">
+        <Border.KeyboardAccelerators>
+            <!-- Panel-wide so Esc closes regardless of which control has focus -->
+            <KeyboardAccelerator Key="Escape" Invoked="OnEscapeAccelerator" />
+        </Border.KeyboardAccelerators>
         <Grid Margin="12" RowSpacing="10">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />

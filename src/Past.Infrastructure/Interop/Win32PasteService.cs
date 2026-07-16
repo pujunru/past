@@ -28,9 +28,9 @@ public sealed class Win32PasteService : IPasteService
 
     public void PasteInto(nint targetWindow)
     {
-        var setOk = false;
-        if (targetWindow != 0)
-            setOk = SetForegroundWindow(targetWindow);
+        // Same foreground-lock problem as showing the overlay: a plain SetForegroundWindow
+        // is often refused, and the keystroke then lands in the wrong app.
+        var setOk = ForegroundApp.ForceForeground(targetWindow);
 
         // Wait until the target is really foreground instead of guessing with a fixed sleep;
         // a too-short delay made the paste land nowhere intermittently.
