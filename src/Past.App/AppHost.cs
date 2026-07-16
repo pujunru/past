@@ -130,15 +130,15 @@ internal sealed class AppHost
         {
             ToolTipText = $"Past — clipboard ({chord})",
             ContextFlyout = menu,
-            // Rendered at runtime so we don't need to ship an .ico asset.
-            IconSource = new GeneratedIconSource
-            {
-                Text = "P",
-                FontSize = 40,
-                Foreground = new SolidColorBrush(Colors.White),
-                Background = new SolidColorBrush(Color.FromArgb(255, 0, 120, 212)),
-            },
         };
+
+        // Use the real app icon so the tray matches the exe/shortcut rather than a
+        // separately drawn glyph. Falls back to the built-in rendering if it is missing.
+        var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "past.ico");
+        if (File.Exists(iconPath))
+            _tray.Icon = new System.Drawing.Icon(iconPath);
+        else
+            _tray.IconSource = new GeneratedIconSource { Text = "P" };
 
         try
         {
