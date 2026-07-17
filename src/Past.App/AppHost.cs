@@ -32,7 +32,9 @@ internal sealed class AppHost
     private Win32GlobalHotkey? _hotkey;
     private Win32PasteService? _paste;
     private OverlayWindow? _overlay;
+    private SettingsWindow? _settingsWindow;
     private TaskbarIcon? _tray;
+    private ToggleMenuFlyoutItem? _pasteOnSelectItem;
 
     public void Start()
     {
@@ -63,12 +65,74 @@ internal sealed class AppHost
 
         _hotkey = new Win32GlobalHotkey(_msg);
         _hotkey.Pressed += OnHotkey;
-        var ok = _hotkey.Register(); // first free chord from HotkeyDefaults.Candidates
-        Diag.Log(ok
-            ? $"hotkey registered: {_hotkey.ActiveChord!.Display}"
-            : $"hotkey registration FAILED for all candidates; lastWin32Error={_hotkey.LastWin32Error}");
+        RegisterConfiguredHotkey();
 
         CreateTray();
+    }
+
+    /// <summary>
+    /// Apply the user's saved hotkey if they chose one and it still registers; otherwise fall
+    /// back to the first available default. This keeps the app usable even if the saved chord
+    /// was later taken by another app.
+    /// </summary>
+    private void RegisterConfiguredHotkey()
+    {
+        if (_settings.HasCustomHotkey &&
+            _hotkey!.Rebind(HotkeyChord.From(_settings.HotkeyModifiers, _settings.HotkeyVk)))
+        {
+            Diag.Log($"hotkey registered (saved): {_hotkey.ActiveChord!.Display}");
+            return;
+        }
+
+        var ok = _hotkey!.Register(); // first free chord from HotkeyDefaults.Candidates
+        Diag.Log(ok
+            ? $"hotkey registered (default): {_hotkey.ActiveChord!.Display}"
+            : $"hotkey registration FAILED for all candidates; lastWin32Error={_hotkey.LastWin32Error}");
+    }
+
+    // Called from the settings window: register the chord live, and persist it only on success.
+    private bool TryApplyHotkey(uint modifiers, uint vk)
+    {
+        var chord = HotkeyChord.From(modifiers, vk);
+        if (!_hotkey!.Rebind(chord))
+        {
+            Diag.Log($"hotkey rebind rejected: {chord.Display} (win32Error={_hotkey.LastWin32Error})");
+            return false;
+        }
+
+        _settings.HotkeyModifiers = modifiers;
+        _settings.HotkeyVk = vk;
+        _settingsStore!.Save(_settings);
+        if (_tray is not null)
+            _tray.ToolTipText = $"Past — clipboard ({chord.Display})";
+        Diag.Log($"hotkey rebound to {chord.Display}");
+        return true;
+    }
+
+    private void OpenSettings()
+    {
+        // Reuse a single window; re-activate if already open.
+        if (_settingsWindow is not null)
+        {
+            _settingsWindow.Activate();
+            return;
+        }
+
+        var current = _hotkey?.ActiveChord ?? HotkeyDefaults.Candidates[0];
+        _settingsWindow = new SettingsWindow(
+            current, TryApplyHotkey, _settings.PasteOnSelect, SetPasteOnSelect);
+        _settingsWindow.Closed += (_, _) => _settingsWindow = null;
+        _settingsWindow.Activate();
+    }
+
+    // Single path for the "paste immediately on select" behaviour, shared by the tray quick
+    // toggle and the settings window, so the two never drift out of sync.
+    private void SetPasteOnSelect(bool value)
+    {
+        _settings.PasteOnSelect = value;
+        _settingsStore!.Save(_settings);
+        if (_pasteOnSelectItem is { } item && item.IsChecked != value)
+            item.IsChecked = value;
     }
 
     // Fires on the pump thread; persist off the UI thread.
@@ -143,18 +207,20 @@ internal sealed class AppHost
             Text = "Paste immediately on select",
             IsChecked = _settings.PasteOnSelect,
         };
-        pasteOnSelect.Click += (_, _) =>
-        {
-            _settings.PasteOnSelect = pasteOnSelect.IsChecked;
-            _settingsStore!.Save(_settings);
-        };
+        // ToggleMenuFlyoutItem flips IsChecked before Click fires, so this is the new value.
+        pasteOnSelect.Click += (_, _) => SetPasteOnSelect(pasteOnSelect.IsChecked);
+        _pasteOnSelectItem = pasteOnSelect;
 
         var clear = new MenuFlyoutItem { Text = "Clear history" };
         clear.Click += async (_, _) => await _history!.ClearAllAsync();
 
+        var settings = new MenuFlyoutItem { Text = "Settings…" };
+        settings.Click += (_, _) => OpenSettings();
+
         var quit = new MenuFlyoutItem { Text = "Quit" };
         quit.Click += (_, _) => Shutdown();
 
+        menu.Items.Add(settings);
         menu.Items.Add(pasteOnSelect);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(pause);

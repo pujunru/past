@@ -33,6 +33,25 @@ public class SettingsTests : IDisposable
         Assert.True(new JsonSettingsStore(_path).Load().PasteOnSelect);
     }
 
+    [Fact]
+    public void No_custom_hotkey_by_default()
+    {
+        // Fresh install has no saved hotkey, so the app uses its default candidate list.
+        Assert.False(new JsonSettingsStore(_path).Load().HasCustomHotkey);
+    }
+
+    [Fact]
+    public void Chosen_hotkey_persists_across_restart()
+    {
+        // Win(8) + Shift(4) + V(0x56)
+        new JsonSettingsStore(_path).Save(new AppSettings { HotkeyModifiers = 8 | 4, HotkeyVk = 0x56 });
+
+        var loaded = new JsonSettingsStore(_path).Load();
+        Assert.True(loaded.HasCustomHotkey);
+        Assert.Equal(8u | 4u, loaded.HotkeyModifiers);
+        Assert.Equal(0x56u, loaded.HotkeyVk);
+    }
+
     public void Dispose()
     {
         try { File.Delete(_path); } catch { /* best effort */ }

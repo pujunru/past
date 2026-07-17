@@ -1,0 +1,54 @@
+<Window
+    x:Class="Past.App.SettingsWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- This is a normal window, so Windows rounds its corners itself. We must NOT draw our
+         own rounded panel inside it, or the two different radii fight and leak at the corners.
+         Fill edge-to-edge with square corners and let the OS do the rounding. -->
+    <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Accent header bar, edge to edge; the OS clips it to the window's rounded corners. -->
+        <Border Grid.Row="0" Style="{StaticResource PastHeaderBar}">
+            <TextBlock Text="Settings" Style="{StaticResource PastHeaderTitle}" />
+        </Border>
+
+        <StackPanel Grid.Row="1" Padding="20" Spacing="12">
+
+            <TextBlock Text="Recall hotkey" Style="{StaticResource PastSectionTitle}" />
+            <TextBlock Style="{StaticResource PastCaption}"
+                       Text="Click the shortcut, then press the new key combination." />
+
+            <!-- The recorder: click to arm, then the next key combo you press is captured and
+                 registered. It doubles as the display of the current chord. Keyboard events are
+                 handled here while armed, so Space/Enter become part of the chord, not clicks. -->
+            <Button x:Name="CaptureButton"
+                    HorizontalAlignment="Left"
+                    MinWidth="180"
+                    Click="OnStartCapture"
+                    KeyDown="OnCaptureKeyDown"
+                    LostFocus="OnCaptureLostFocus">
+                <TextBlock x:Name="CaptureText" FontWeight="SemiBold" />
+            </Button>
+
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap" Style="{StaticResource PastCaption}" />
+
+            <Border Height="1" Margin="0,4"
+                    Background="{ThemeResource CardStrokeColorDefaultBrush}" />
+
+            <TextBlock Text="Behaviour" Style="{StaticResource PastSectionTitle}" />
+
+            <!-- Mirrors the tray's quick toggle; both persist to the same setting. -->
+            <ToggleSwitch x:Name="PasteToggle"
+                          Header="Paste immediately on select"
+                          Toggled="OnPasteToggled" />
+            <TextBlock Style="{StaticResource PastCaption}"
+                       Text="Off: choosing a clip only copies it to the clipboard; you paste it yourself." />
+
+        </StackPanel>
+    </Grid>
+</Window>
