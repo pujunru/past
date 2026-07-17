@@ -26,6 +26,13 @@ public sealed class Win32PasteService : IPasteService
         ClipboardNative.SetText(_window.Handle, text);
     }
 
+    public void SetClipboardImage(byte[] png)
+    {
+        _guard.MarkImageWritten(png);
+        // We store PNG, but CF_DIB is what apps actually accept when pasting a bitmap.
+        ClipboardNative.SetBytes(_window.Handle, CF_DIB, ClipboardImage.ToDib(png));
+    }
+
     public void PasteInto(nint targetWindow)
     {
         // Same foreground-lock problem as showing the overlay: a plain SetForegroundWindow
