@@ -32,24 +32,46 @@ public sealed class SqliteClipStore : IClipStore, IDisposable
 
     private void Initialize()
     {
-        using var cmd = _conn.CreateCommand();
-        cmd.CommandText = """
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS Clip (
-                Id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                ContentType INTEGER NOT NULL,
-                Content     TEXT    NOT NULL,
-                Preview     TEXT    NOT NULL,
-                Hash        TEXT    NOT NULL,
-                SizeBytes   INTEGER NOT NULL,
-                SourceApp   TEXT    NULL,
-                CreatedUtc  INTEGER NOT NULL,
-                LastUsedUtc INTEGER NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS IX_Clip_LastUsed ON Clip(LastUsedUtc DESC);
-            CREATE INDEX IF NOT EXISTS IX_Clip_Hash ON Clip(Hash);
-            """;
-        cmd.ExecuteNonQuery();
+        using (var cmd = _conn.CreateCommand())
+        {
+            cmd.CommandText = """
+                PRAGMA journal_mode=WAL;
+                CREATE TABLE IF NOT EXISTS Clip (
+                    Id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ContentType INTEGER NOT NULL,
+                    Content     TEXT    NOT NULL,
+                    Preview     TEXT    NOT NULL,
+                    Hash        TEXT    NOT NULL,
+                    SizeBytes   INTEGER NOT NULL,
+                    SourceApp   TEXT    NULL,
+                    CreatedUtc  INTEGER NOT NULL,
+                    LastUsedUtc INTEGER NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS IX_Clip_LastUsed ON Clip(LastUsedUtc DESC);
+                CREATE INDEX IF NOT EXISTS IX_Clip_Hash ON Clip(Hash);
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        // Image columns were added after the first release, so existing databases must be
+        // migrated in place rather than recreated - people have real history in there.
+        AddColumnIfMissing("Data", "BLOB NULL");
+        AddColumnIfMissing("Thumbnail", "BLOB NULL");
+        AddColumnIfMissing("PixelWidth", "INTEGER NOT NULL DEFAULT 0");
+        AddColumnIfMissing("PixelHeight", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private void AddColumnIfMissing(string name, string definition)
+    {
+        using var check = _conn.CreateCommand();
+        check.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Clip') WHERE name = $n;";
+        check.Parameters.AddWithValue("$n", name);
+        if (Convert.ToInt32(check.ExecuteScalar()) > 0)
+            return;
+
+        using var alter = _conn.CreateCommand();
+        alter.CommandText = $"ALTER TABLE Clip ADD COLUMN {name} {definition};";
+        alter.ExecuteNonQuery();
     }
 
     private async Task<T> WithGate<T>(CancellationToken ct, Func<SqliteCommand, Task<T>> body)
@@ -79,8 +101,10 @@ public sealed class SqliteClipStore : IClipStore, IDisposable
         WithGate(ct, async cmd =>
         {
             cmd.CommandText = """
-                INSERT INTO Clip (ContentType, Content, Preview, Hash, SizeBytes, SourceApp, CreatedUtc, LastUsedUtc)
-                VALUES ($type, $content, $preview, $hash, $size, $app, $created, $used);
+                INSERT INTO Clip (ContentType, Content, Preview, Hash, SizeBytes, SourceApp,
+                                  CreatedUtc, LastUsedUtc, Data, Thumbnail, PixelWidth, PixelHeight)
+                VALUES ($type, $content, $preview, $hash, $size, $app,
+                        $created, $used, $data, $thumb, $pw, $ph);
                 SELECT last_insert_rowid();
                 """;
             cmd.Parameters.AddWithValue("$type", (int)clip.ContentType);
@@ -91,6 +115,13 @@ public sealed class SqliteClipStore : IClipStore, IDisposable
             cmd.Parameters.AddWithValue("$app", (object?)clip.SourceApp ?? DBNull.Value);
             cmd.Parameters.AddWithValue("$created", ToUnixMs(clip.CreatedUtc));
             cmd.Parameters.AddWithValue("$used", ToUnixMs(clip.LastUsedUtc));
+            // Image bytes get the same AES-GCM treatment as text: nothing readable at rest.
+            cmd.Parameters.AddWithValue("$data",
+                clip.Data is null ? DBNull.Value : _protector.ProtectBytes(clip.Data));
+            cmd.Parameters.AddWithValue("$thumb",
+                clip.Thumbnail is null ? DBNull.Value : _protector.ProtectBytes(clip.Thumbnail));
+            cmd.Parameters.AddWithValue("$pw", clip.PixelWidth);
+            cmd.Parameters.AddWithValue("$ph", clip.PixelHeight);
             var id = (long)(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false))!;
             clip.Id = id;
             return id;
@@ -126,8 +157,11 @@ public sealed class SqliteClipStore : IClipStore, IDisposable
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
                 var clip = Map(reader);
+                // Match the preview as well as the content, so image clips (whose content is
+                // empty) are still findable by typing e.g. "image".
                 if (string.IsNullOrEmpty(search) ||
-                    clip.Content.Contains(search, StringComparison.OrdinalIgnoreCase))
+                    clip.Content.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                    clip.Preview.Contains(search, StringComparison.OrdinalIgnoreCase))
                 {
                     results.Add(clip);
                     if (results.Count >= limit)
@@ -186,7 +220,17 @@ public sealed class SqliteClipStore : IClipStore, IDisposable
         SourceApp = r.IsDBNull(r.GetOrdinal("SourceApp")) ? null : r.GetString(r.GetOrdinal("SourceApp")),
         CreatedUtc = FromUnixMs(r.GetInt64(r.GetOrdinal("CreatedUtc"))),
         LastUsedUtc = FromUnixMs(r.GetInt64(r.GetOrdinal("LastUsedUtc"))),
+        Data = ReadBlob(r, "Data"),
+        Thumbnail = ReadBlob(r, "Thumbnail"),
+        PixelWidth = r.GetInt32(r.GetOrdinal("PixelWidth")),
+        PixelHeight = r.GetInt32(r.GetOrdinal("PixelHeight")),
     };
+
+    private byte[]? ReadBlob(SqliteDataReader r, string column)
+    {
+        var i = r.GetOrdinal(column);
+        return r.IsDBNull(i) ? null : _protector.UnprotectBytes((byte[])r.GetValue(i));
+    }
 
     private static long ToUnixMs(DateTime utc) => new DateTimeOffset(utc, TimeSpan.Zero).ToUnixTimeMilliseconds();
     private static DateTime FromUnixMs(long ms) => DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime;

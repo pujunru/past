@@ -32,6 +32,62 @@ internal static class ClipboardNative
         });
     }
 
+    /// <summary>Read an arbitrary clipboard format as raw bytes (used for CF_DIB).</summary>
+    public static byte[]? TryGetBytes(nint owner, uint format)
+    {
+        if (!IsClipboardFormatAvailable(format))
+            return null;
+
+        byte[]? result = null;
+        WithClipboard(owner, () =>
+        {
+            var handle = GetClipboardData(format);
+            if (handle == 0)
+                return null;
+
+            var size = (int)GlobalSize(handle);
+            if (size <= 0)
+                return null;
+
+            var ptr = GlobalLock(handle);
+            if (ptr == 0)
+                return null;
+            try
+            {
+                var buffer = new byte[size];
+                Marshal.Copy(ptr, buffer, 0, size);
+                result = buffer;
+            }
+            finally
+            {
+                GlobalUnlock(handle);
+            }
+            return null;
+        });
+        return result;
+    }
+
+    /// <summary>Put raw bytes on the clipboard under <paramref name="format"/> (used for CF_DIB).</summary>
+    public static void SetBytes(nint owner, uint format, byte[] bytes)
+    {
+        WithClipboard(owner, () =>
+        {
+            EmptyClipboard();
+            var hGlobal = GlobalAlloc(GMEM_MOVEABLE, (nuint)bytes.Length);
+            var target = GlobalLock(hGlobal);
+            try
+            {
+                Marshal.Copy(bytes, 0, target, bytes.Length);
+            }
+            finally
+            {
+                GlobalUnlock(hGlobal);
+            }
+            SetClipboardData(format, hGlobal); // ownership transfers to the system
+            return null;
+        });
+    }
+
     public static void SetText(nint owner, string text)
     {
         WithClipboard(owner, () =>

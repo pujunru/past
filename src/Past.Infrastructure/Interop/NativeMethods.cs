@@ -12,6 +12,26 @@ internal static class NativeMethods
     public const int WM_APP_INVOKE = 0x8002; // custom: run queued work on the pump thread
 
     public const int CF_UNICODETEXT = 13;
+    public const int CF_DIB = 8;
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct BITMAPINFOHEADER
+    {
+        public uint biSize;
+        public int biWidth;
+        public int biHeight;
+        public ushort biPlanes;
+        public ushort biBitCount;
+        public uint biCompression;
+        public uint biSizeImage;
+        public int biXPelsPerMeter;
+        public int biYPelsPerMeter;
+        public uint biClrUsed;
+        public uint biClrImportant;
+    }
+
+    [DllImport("kernel32.dll")]
+    public static extern nuint GlobalSize(nint hMem);
     public const uint GMEM_MOVEABLE = 0x0002;
     public static readonly nint HWND_MESSAGE = -3;
 

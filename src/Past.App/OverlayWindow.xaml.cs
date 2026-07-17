@@ -6,6 +6,7 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Past.Core;
 using Past.Infrastructure.Interop;
 using Past.Services;
 using Windows.Graphics;
@@ -279,7 +280,17 @@ public sealed partial class OverlayWindow : Window
     private void Paste(ClipCard card)
     {
         Hide();
-        _paste.SetClipboardText(card.Clip.Content);
+
+        if (card.Clip.ContentType == ClipContentType.Image)
+        {
+            if (card.Clip.Data is null)
+                return;
+            _paste.SetClipboardImage(card.Clip.Data);
+        }
+        else
+        {
+            _paste.SetClipboardText(card.Clip.Content);
+        }
 
         // Default: paste straight into the app you came from. With PasteOnSelect off the
         // clip only lands on the clipboard and the user pastes it themselves.

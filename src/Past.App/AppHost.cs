@@ -56,7 +56,7 @@ internal sealed class AppHost
         _paste = new Win32PasteService(_msg, _guard, Diag.Log);
         _overlay = new OverlayWindow(_history, _paste, _settings);
 
-        _monitor = new Win32ClipboardMonitor(_msg, _guard);
+        _monitor = new Win32ClipboardMonitor(_msg, _guard, Diag.Log);
         _monitor.ClipCaptured += OnClipCaptured;
         _monitor.Start();
 
@@ -79,9 +79,11 @@ internal sealed class AppHost
         {
             await _history!.CaptureAsync(draft);
         }
-        catch
+        catch (Exception ex)
         {
-            // P0: swallow. A local (never-remote) logger arrives with the P1 settings work.
+            // Never take the app down over one clip, but do not hide the reason either:
+            // metadata only, never the clip contents.
+            Diag.Log($"capture FAILED for {draft.ContentType}: {ex.GetType().Name}: {ex.Message}");
         }
     }
 
