@@ -43,7 +43,7 @@ jobs:
           -p:Platform=$env:PLATFORM
           -verbosity:minimal
 
-      - name: Stage artifact
+      - name: Stage build output
         id: stage
         shell: pwsh
         run: |
@@ -53,26 +53,64 @@ jobs:
           if (-not (Test-Path "$out/Past.App.exe")) { throw "Past.App.exe not found in $out" }
           $zip = "$env:GITHUB_WORKSPACE/Past-$env:PLATFORM.zip"
           Compress-Archive -Path "$out/*" -DestinationPath $zip
+          "out=$out" >> $env:GITHUB_OUTPUT
           "zip=$zip" >> $env:GITHUB_OUTPUT
-          "{0:N1} MB" -f ((Get-Item $zip).Length / 1MB)
 
-      - name: Upload artifact
+      # Version the installer from the tag (v1.2.3 -> 1.2.3); untagged builds get 0.0.0.
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $v = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF -replace '^refs/tags/v','' } else { '0.0.0' }
+          "value=$v" >> $env:GITHUB_OUTPUT
+          "installer version: $v"
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "$env:ProgramFiles\Inno Setup 6\ISCC.exe",
+            "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe"
+          ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found on the runner" }
+          & $iscc "installer\Past.iss" `
+            "/DSourceDir=${{ steps.stage.outputs.out }}" `
+            "/DAppVersion=${{ steps.version.outputs.value }}"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+          if (-not (Test-Path "dist/PastSetup.exe")) { throw "PastSetup.exe was not produced" }
+          "{0:N1} MB" -f ((Get-Item "dist/PastSetup.exe").Length / 1MB)
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Past-${{ env.PLATFORM }}
-          path: ${{ steps.stage.outputs.zip }}
+          path: |
+            ${{ steps.stage.outputs.zip }}
+            dist/PastSetup.exe
           if-no-files-found: error
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.stage.outputs.zip }}
+          files: |
+            dist/PastSetup.exe
+            ${{ steps.stage.outputs.zip }}
           generate_release_notes: true
           body: |
-            Unpackaged x64 build. Requires Windows 10 21H2+ / Windows 11.
+            Windows 10 21H2+ / Windows 11, x64.
 
-            Download the zip, extract it anywhere, and run `Past.App.exe`.
-            It is self-contained, so no .NET install is needed.
+            **Recommended: download `PastSetup.exe` and run it.** It installs per-user (no
+            admin prompt), adds a Start menu entry, can start Past when you sign in, and
+            registers a normal uninstall entry under "Apps & features".
 
-            Press the global hotkey (`Win+Alt+V` by default) to open the clipboard strip.
+            `Past-x64.zip` is the raw build if you would rather not install anything —
+            extract it and run `Past.App.exe`.
+
+            Both are self-contained, so no .NET install is needed.
+
+            Press `Win+Alt+V` to open the clipboard strip.
+
+            Note: the installer is not code-signed, so SmartScreen may warn on first run —
+            choose "More info" then "Run anyway".
