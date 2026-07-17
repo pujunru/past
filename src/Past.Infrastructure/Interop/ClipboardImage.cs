@@ -17,22 +17,77 @@ internal static class ClipboardImage
     /// <summary>Decoded clipboard bitmap, encoded for storage.</summary>
     internal sealed record Decoded(byte[] Png, byte[]? Thumbnail, int Width, int Height);
 
-    /// <summary>Read CF_DIB off the clipboard and encode it as PNG (+ thumbnail).</summary>
+    // Registered by name, not a CF_* constant. Screenshot tools commonly offer this and
+    // nothing else - Windows cannot synthesise CF_DIB from it, so ignoring it meant their
+    // images were silently dropped.
+    private static uint _pngFormat;
+
+    private static uint PngFormat =>
+        _pngFormat != 0 ? _pngFormat : _pngFormat = NativeMethods.RegisterClipboardFormatW("PNG");
+
+    /// <summary>
+    /// Read an image off the clipboard and encode it as PNG (+ thumbnail).
+    /// <para>
+    /// Tries the formats real apps actually publish, in order of fidelity: the PNG format
+    /// first (already what we store, and it keeps alpha), then CF_DIB, then CF_DIBV5.
+    /// </para>
+    /// </summary>
     public static Decoded? TryRead(nint owner, Action<string>? log = null)
     {
-        var dib = ClipboardNative.TryGetBytes(owner, NativeMethods.CF_DIB);
-        if (dib is null || dib.Length < Marshal.SizeOf<NativeMethods.BITMAPINFOHEADER>())
+        // Best case: the source already gives us PNG, so no conversion at all.
+        var png = ClipboardNative.TryGetBytes(owner, PngFormat);
+        if (png is { Length: > 0 })
         {
-            log?.Invoke($"image: no usable CF_DIB (bytes={dib?.Length ?? -1})");
+            var decoded = FromPng(png, log);
+            if (decoded is not null)
+                return Log(decoded, "PNG", log);
+        }
+
+        var dib = TryReadDib(owner, NativeMethods.CF_DIB, log)
+                  ?? TryReadDib(owner, NativeMethods.CF_DIBV5, log);
+        if (dib is not null)
+            return Log(dib, "DIB", log);
+
+        // Nothing we understand: say what the clipboard actually holds, so an unsupported
+        // source identifies itself instead of failing silently.
+        log?.Invoke($"image: no readable image format; clipboard has [{ClipboardNative.DescribeFormats(owner)}]");
+        return null;
+    }
+
+    private static Decoded Log(Decoded d, string via, Action<string>? log)
+    {
+        log?.Invoke($"image: captured {d.Width}x{d.Height} via={via} png={d.Png.Length}B thumb={(d.Thumbnail?.Length ?? 0)}B");
+        return d;
+    }
+
+    private static Decoded? FromPng(byte[] png, Action<string>? log)
+    {
+        try
+        {
+            using var ms = new MemoryStream(png);
+            using var bitmap = new Bitmap(ms);
+            var thumb = png.Length <= ClipLimits.MaxThumbnailSourceBytes ? MakeThumbnail(bitmap) : null;
+            return new Decoded(png, thumb, bitmap.Width, bitmap.Height);
+        }
+        catch (Exception ex)
+        {
+            log?.Invoke($"image: PNG decode failed {ex.GetType().Name}: {ex.Message}");
             return null;
         }
+    }
+
+    private static Decoded? TryReadDib(nint owner, uint format, Action<string>? log)
+    {
+        var dib = ClipboardNative.TryGetBytes(owner, format);
+        if (dib is null || dib.Length < Marshal.SizeOf<NativeMethods.BITMAPINFOHEADER>())
+            return null;
 
         try
         {
             using var bitmap = FromDib(dib);
             if (bitmap is null)
             {
-                log?.Invoke($"image: DIB decode returned null (dibBytes={dib.Length})");
+                log?.Invoke($"image: DIB decode returned null (format={format} bytes={dib.Length})");
                 return null;
             }
 
@@ -44,14 +99,13 @@ internal static class ClipboardImage
             if (png.Length <= ClipLimits.MaxThumbnailSourceBytes)
                 thumb = MakeThumbnail(bitmap);
 
-            log?.Invoke($"image: captured {bitmap.Width}x{bitmap.Height} png={png.Length}B thumb={(thumb?.Length ?? 0)}B");
             return new Decoded(png, thumb, bitmap.Width, bitmap.Height);
         }
         catch (Exception ex)
         {
             // A malformed or exotic bitmap must never take the capture pipeline down,
             // but swallowing it silently hides real bugs - say what happened.
-            log?.Invoke($"image: decode FAILED {ex.GetType().Name}: {ex.Message}");
+            log?.Invoke($"image: decode FAILED (format={format}) {ex.GetType().Name}: {ex.Message}");
             return null;
         }
     }
