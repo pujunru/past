@@ -56,6 +56,42 @@ public sealed class Win32GlobalHotkey : IGlobalHotkey
         return _registered;
     }
 
+    /// <summary>
+    /// Switch to a specific chord (from the settings UI). Registers the new binding first;
+    /// only if that succeeds is the old one dropped, so a rejected chord (e.g. already taken
+    /// by another app) leaves the current hotkey working. Returns whether it registered.
+    /// </summary>
+    public bool Rebind(HotkeyChord chord)
+    {
+        var success = false;
+        _window.Invoke(() =>
+        {
+            // Register the new binding on a spare id first, so a failure is non-destructive.
+            if (!RegisterHotKey(_window.Handle, HotkeyId + 1, chord.Modifiers, chord.Vk))
+            {
+                LastWin32Error = Marshal.GetLastWin32Error();
+                return;
+            }
+
+            if (_registered)
+                UnregisterHotKey(_window.Handle, HotkeyId);
+            UnregisterHotKey(_window.Handle, HotkeyId + 1);
+
+            success = RegisterHotKey(_window.Handle, HotkeyId, chord.Modifiers, chord.Vk);
+            if (success)
+            {
+                ActiveChord = chord;
+                LastWin32Error = 0;
+                _registered = true;
+            }
+            else
+            {
+                LastWin32Error = Marshal.GetLastWin32Error();
+            }
+        });
+        return success;
+    }
+
     public void Unregister()
     {
         if (!_registered)
