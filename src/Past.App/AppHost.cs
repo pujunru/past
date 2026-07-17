@@ -94,6 +94,40 @@ internal sealed class AppHost
         _ui.TryEnqueue(() => _overlay!.ShowNear(foreground));
     }
 
+    /// <summary>
+    /// Tear everything down and end the process.
+    /// <para>
+    /// Quit used to just call Application.Exit(), which does not reliably terminate a
+    /// window-less WinUI app: the tray icon and XAML host keep it alive, so the process
+    /// lingered with its global hotkey still registered while no longer capturing —
+    /// looking alive but doing nothing, and blocking the hotkey for any new instance.
+    /// </para>
+    /// Release the OS-level things we hold first (hotkey, clipboard listener, database),
+    /// then guarantee the exit.
+    /// </summary>
+    private void Shutdown()
+    {
+        Diag.Log("shutdown requested");
+        try
+        {
+            _tray?.Dispose();    // remove the icon now, not whenever the user next hovers it
+            _hotkey?.Dispose();  // unregister the global hotkey
+            _monitor?.Dispose(); // stop listening for clipboard updates
+            _msg?.Dispose();     // stop the message pump thread
+            _store?.Dispose();   // close the database cleanly
+        }
+        catch (Exception ex)
+        {
+            Diag.Log($"shutdown cleanup failed: {ex.GetType().Name}: {ex.Message}");
+        }
+
+        Application.Current.Exit();
+
+        // A clipboard manager you cannot quit is worse than one that exits abruptly, and
+        // everything we own is already released above.
+        Environment.Exit(0);
+    }
+
     private void CreateTray()
     {
         var menu = new MenuFlyout();
@@ -118,7 +152,7 @@ internal sealed class AppHost
         clear.Click += async (_, _) => await _history!.ClearAllAsync();
 
         var quit = new MenuFlyoutItem { Text = "Quit" };
-        quit.Click += (_, _) => Application.Current.Exit();
+        quit.Click += (_, _) => Shutdown();
 
         menu.Items.Add(pasteOnSelect);
         menu.Items.Add(new MenuFlyoutSeparator());
@@ -132,6 +166,10 @@ internal sealed class AppHost
         {
             ToolTipText = $"Past — clipboard ({chord})",
             ContextFlyout = menu,
+            // The default PopupMenu mode renders the flyout as a native Win32 menu and never
+            // raises MenuFlyoutItem.Click, so every tray command silently did nothing.
+            // SecondWindow hosts the real XAML flyout, where Click routes normally.
+            ContextMenuMode = ContextMenuMode.SecondWindow,
         };
 
         // Use the real app icon so the tray matches the exe/shortcut rather than a
