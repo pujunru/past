@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using Microsoft.Data.Sqlite;
 using Past.Core;
 using Past.Infrastructure.Security;
 using Past.Infrastructure.Storage;
@@ -91,6 +92,61 @@ public class SqliteClipStoreTests : IDisposable
         Assert.Equal(2, await _store.CountAsync());
         var recent = await _store.QueryRecentAsync(null, 10);
         Assert.Equal(new[] { "c4", "c3" }, recent.Select(c => c.Content).ToArray());
+    }
+
+    [Fact]
+    public async Task Image_blobs_round_trip_and_are_encrypted_at_rest()
+    {
+        var png = new byte[] { 0x89, 0x50, 0x4E, 0x47, 1, 2, 3 };
+        var thumb = new byte[] { 9, 8, 7 };
+        var clip = new Clip
+        {
+            ContentType = ClipContentType.Image,
+            Content = string.Empty,
+            Data = png,
+            Thumbnail = thumb,
+            PixelWidth = 1920,
+            PixelHeight = 1080,
+            Preview = "Image 1920×1080",
+            Hash = ClipHasher.Hash(png, "salt"),
+            SizeBytes = png.Length,
+            CreatedUtc = DateTime.UtcNow,
+            LastUsedUtc = DateTime.UtcNow,
+        };
+        await _store.InsertAsync(clip);
+
+        var read = Assert.Single(await _store.QueryRecentAsync(null, 10));
+        Assert.Equal(ClipContentType.Image, read.ContentType);
+        Assert.Equal(png, read.Data);
+        Assert.Equal(thumb, read.Thumbnail);
+        Assert.Equal(1920, read.PixelWidth);
+        Assert.Equal(1080, read.PixelHeight);
+
+        // The raw blob on disk must not be the plaintext PNG.
+        using var conn = new SqliteConnection($"Data Source={_dbPath}");
+        conn.Open();
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Data FROM Clip LIMIT 1;";
+        var stored = (byte[])cmd.ExecuteScalar()!;
+        Assert.NotEqual(png, stored);
+    }
+
+    [Fact]
+    public async Task Image_clips_are_findable_by_searching_their_preview()
+    {
+        // Image clips have empty Content, so search has to consider the preview.
+        await _store.InsertAsync(new Clip
+        {
+            ContentType = ClipContentType.Image,
+            Content = string.Empty,
+            Data = [1, 2, 3],
+            Preview = "Image 800×600",
+            Hash = "h1",
+            CreatedUtc = DateTime.UtcNow,
+            LastUsedUtc = DateTime.UtcNow,
+        });
+
+        Assert.Single(await _store.QueryRecentAsync("image", 10));
     }
 
     [Fact]
