@@ -54,10 +54,26 @@ If you're on a Mac, go use PasteClip.
 - `settings.json` is deliberately plain text: they're non-sensitive toggles, and being able
   to read exactly what's stored suits a privacy-first tool
 
+## Install
+
+Grab `PastSetup.exe` from the [latest release](https://github.com/pujunru/past/releases/latest)
+and run it. It installs per-user, so there is no admin prompt, and it adds a Start menu
+entry, an optional "start when I sign in" task, and a normal uninstall entry under
+"Apps & features".
+
+The installer is not code-signed, so SmartScreen may warn on first run — choose
+**More info → Run anyway**.
+
+Prefer not to install anything? `Past-x64.zip` from the same release is the raw build:
+extract it anywhere and run `Past.App.exe`. Both are self-contained, so no .NET install
+is needed.
+
+Uninstalling leaves your clipboard history in `%LOCALAPPDATA%\Past` alone; delete that
+folder too if you want it gone.
+
 ## Requirements
 
-- Windows 10 21H2+ / Windows 11
-- .NET 8
+- Windows 10 21H2+ / Windows 11 (x64)
 
 ## Building
 
@@ -77,6 +93,17 @@ development** workload plus the **.NET WinUI app development tools** component, 
 ```
 
 Full details in [docs/06-BUILD-WINUI.md](docs/06-BUILD-WINUI.md).
+
+### Building the installer
+
+Needs [Inno Setup 6](https://jrsoftware.org/isdl.php). After a Release build:
+
+```powershell
+ISCC.exe installer\Past.iss /DAppVersion=0.2.0
+# -> dist\PastSetup.exe
+```
+
+CI does this automatically and attaches it to releases built from a `v*` tag.
 
 ## Project layout
 
