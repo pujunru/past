@@ -34,9 +34,10 @@ If you're on a Mac, go use PasteClip.
 
 ## Features (v1)
 
-- **Text clipboard capture** — event-driven, no polling
-- **Horizontal card strip** — each clip is a card with type badge (TEXT / LINK / CODE),
-  source app, relative age and character count
+- **Text and image capture** — event-driven, no polling
+- **Horizontal card strip** — each clip is a card with type badge (TEXT / LINK / CODE /
+  IMAGE), source app, relative age and size. Images show a thumbnail; ones over 50 MB
+  show a generic icon instead but still paste.
 - **Global hotkey** — tries `Win+Alt+V` first (Windows reserves `Win+V`, and `Win+Shift+V`
   is taken on some machines), falling back through other chords until one registers
 - **Instant search** — just start typing
