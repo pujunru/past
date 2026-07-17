@@ -10,8 +10,10 @@
                 <RowDefinition Height="*" />
             </Grid.RowDefinitions>
 
-            <!-- Accent header bar, same treatment as a clip card's header -->
-            <Border Grid.Row="0" Style="{StaticResource PastHeaderBar}" CornerRadius="12,12,0,0">
+            <!-- Accent header bar, same treatment as a clip card's header. The radius must be
+                 the panel radius minus its border, or the corners don't nest (PastHeaderCornerRadius). -->
+            <Border Grid.Row="0" Style="{StaticResource PastHeaderBar}"
+                    CornerRadius="{StaticResource PastHeaderCornerRadius}">
                 <TextBlock Text="Settings" Style="{StaticResource PastHeaderTitle}" />
             </Border>
 

@@ -15,6 +15,11 @@
     <x:Double x:Key="PastPanelRadius">12</x:Double>
     <x:Double x:Key="PastCardRadius">8</x:Double>
 
+    <!-- Inner radius for a header that sits against a 1px-bordered panel: it must be the
+         panel radius minus the border, or the header's corners don't nest into the panel's.
+         (12 - 1 = 11; the clip card uses 7 = 8 - 1 for the same reason.) -->
+    <CornerRadius x:Key="PastHeaderCornerRadius">11,11,0,0</CornerRadius>
+
     <!-- Rounded surface used as the outer panel of both the overlay and settings. -->
     <Style x:Key="PastPanel" TargetType="Border">
         <Setter Property="Background" Value="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}" />
