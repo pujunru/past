@@ -24,12 +24,12 @@ public class CryptoTests
 public class SqliteClipStoreTests : IDisposable
 {
     private readonly string _dbPath = Path.Combine(Path.GetTempPath(), $"past_test_{Guid.NewGuid():N}.db");
+    private readonly AesGcmContentProtector _protector = new(RandomNumberGenerator.GetBytes(32));
     private readonly SqliteClipStore _store;
 
     public SqliteClipStoreTests()
     {
-        var protector = new AesGcmContentProtector(RandomNumberGenerator.GetBytes(32));
-        _store = new SqliteClipStore($"Data Source={_dbPath}", protector);
+        _store = new SqliteClipStore($"Data Source={_dbPath}", _protector);
     }
 
     private static Clip NewClip(string content, DateTime when) => new()
@@ -147,6 +147,32 @@ public class SqliteClipStoreTests : IDisposable
         });
 
         Assert.Single(await _store.QueryRecentAsync("image", 10));
+    }
+
+    [Fact]
+    public async Task Unreadable_rows_are_skipped_not_fatal()
+    {
+        // A row encrypted under a different key stands in for corruption / a stale DPAPI key.
+        var otherKey = new AesGcmContentProtector(RandomNumberGenerator.GetBytes(32));
+        var t = DateTime.UtcNow;
+
+        await _store.InsertAsync(NewClip("good-before", t.AddSeconds(1)));
+
+        // Insert a row the real store cannot decrypt, using a separate store on the same file.
+        using (var alien = new SqliteClipStore($"Data Source={_dbPath}", otherKey))
+            await alien.InsertAsync(NewClip("ENCRYPTED-WITH-WRONG-KEY", t.AddSeconds(2)));
+
+        await _store.InsertAsync(NewClip("good-after", t.AddSeconds(3)));
+
+        long? skipped = null;
+        using var resilient = new SqliteClipStore($"Data Source={_dbPath}", _protector,
+            onRowError: (id, _) => skipped = id);
+
+        var clips = await resilient.QueryRecentAsync(null, 10);
+
+        // The two readable rows survive; the bad one is skipped, not thrown.
+        Assert.Equal(new[] { "good-after", "good-before" }, clips.Select(c => c.Content).ToArray());
+        Assert.NotNull(skipped);
     }
 
     [Fact]

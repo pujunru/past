@@ -45,7 +45,8 @@ internal sealed class AppHost
         // Storage + engine (privacy floor: DPAPI-wrapped key, AES-GCM at rest).
         var key = new DpapiKeyProvider(Path.Combine(dir, "key.bin")).GetKey();
         var protector = new AesGcmContentProtector(key);
-        _store = new SqliteClipStore($"Data Source={Path.Combine(dir, "past.db")}", protector);
+        _store = new SqliteClipStore($"Data Source={Path.Combine(dir, "past.db")}", protector,
+            onRowError: (id, ex) => Diag.Log($"skipped unreadable clip id={id}: {ex.GetType().Name}"));
         _history = new HistoryService(_store, new SystemClock(), new HistoryOptions());
 
         _settingsStore = new JsonSettingsStore(Path.Combine(dir, "settings.json"));
