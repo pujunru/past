@@ -32,6 +32,38 @@ internal static class ClipboardNative
         });
     }
 
+    /// <summary>
+    /// Names of the formats currently on the clipboard, for diagnostics only.
+    /// Lets an unsupported source identify itself instead of failing silently.
+    /// </summary>
+    public static string DescribeFormats(nint owner)
+    {
+        var names = new List<string>();
+        WithClipboard(owner, () =>
+        {
+            uint format = 0;
+            while ((format = EnumClipboardFormats(format)) != 0)
+            {
+                var sb = new System.Text.StringBuilder(128);
+                var len = GetClipboardFormatNameW(format, sb, sb.Capacity);
+                names.Add(len > 0 ? $"{sb} ({format})" : StandardName(format));
+            }
+            return null;
+        });
+        return names.Count == 0 ? "none" : string.Join(", ", names);
+    }
+
+    private static string StandardName(uint format) => format switch
+    {
+        1 => "CF_TEXT",
+        2 => "CF_BITMAP",
+        CF_UNICODETEXT => "CF_UNICODETEXT",
+        CF_DIB => "CF_DIB",
+        CF_DIBV5 => "CF_DIBV5",
+        15 => "CF_HDROP",
+        _ => $"format {format}",
+    };
+
     /// <summary>Read an arbitrary clipboard format as raw bytes (used for CF_DIB).</summary>
     public static byte[]? TryGetBytes(nint owner, uint format)
     {

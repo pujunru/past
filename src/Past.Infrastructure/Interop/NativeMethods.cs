@@ -13,6 +13,16 @@ internal static class NativeMethods
 
     public const int CF_UNICODETEXT = 13;
     public const int CF_DIB = 8;
+    public const int CF_DIBV5 = 17;
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern uint RegisterClipboardFormatW(string lpszFormat);
+
+    [DllImport("user32.dll")]
+    public static extern uint EnumClipboardFormats(uint format);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    public static extern int GetClipboardFormatNameW(uint format, System.Text.StringBuilder lpszFormatName, int cchMaxCount);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct BITMAPINFOHEADER
