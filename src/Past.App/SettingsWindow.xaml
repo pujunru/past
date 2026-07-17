@@ -15,50 +15,28 @@
         <!-- Accent header bar, edge to edge; the OS clips it to the window's rounded corners. -->
         <Border Grid.Row="0" Style="{StaticResource PastHeaderBar}">
             <TextBlock Text="Settings" Style="{StaticResource PastHeaderTitle}" />
-            </Border>
+        </Border>
 
-            <StackPanel Grid.Row="1" Padding="20" Spacing="14">
+        <StackPanel Grid.Row="1" Padding="20" Spacing="12">
 
-                <TextBlock Text="Recall hotkey" Style="{StaticResource PastSectionTitle}" />
-                <TextBlock Style="{StaticResource PastCaption}"
-                           Text="The shortcut that opens the clipboard strip." />
+            <TextBlock Text="Recall hotkey" Style="{StaticResource PastSectionTitle}" />
+            <TextBlock Style="{StaticResource PastCaption}"
+                       Text="Click the shortcut, then press the new key combination." />
 
-                <!-- Live preview of the chosen chord, styled like a card badge -->
-                <Border Style="{StaticResource PastBadge}">
-                    <TextBlock x:Name="PreviewText" Style="{StaticResource PastBadgeText}" />
-                </Border>
+            <!-- The recorder: click to arm, then the next key combo you press is captured and
+                 registered. It doubles as the display of the current chord. Keyboard events are
+                 handled here while armed, so Space/Enter become part of the chord, not clicks. -->
+            <Button x:Name="CaptureButton"
+                    HorizontalAlignment="Left"
+                    MinWidth="180"
+                    Click="OnStartCapture"
+                    KeyDown="OnCaptureKeyDown"
+                    LostFocus="OnCaptureLostFocus">
+                <TextBlock x:Name="CaptureText" FontWeight="SemiBold" />
+            </Button>
 
-                <!-- Modifiers in a 2x2 grid: CheckBox keeps a wide default, so a row of four
-                     clips; a grid is compact and cannot overflow. -->
-                <Grid ColumnSpacing="8" RowSpacing="6">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <CheckBox x:Name="ChkWin" Grid.Row="0" Grid.Column="0" Content="Win" Click="OnSelectionChanged" />
-                    <CheckBox x:Name="ChkCtrl" Grid.Row="0" Grid.Column="1" Content="Ctrl" Click="OnSelectionChanged" />
-                    <CheckBox x:Name="ChkAlt" Grid.Row="1" Grid.Column="0" Content="Alt" Click="OnSelectionChanged" />
-                    <CheckBox x:Name="ChkShift" Grid.Row="1" Grid.Column="1" Content="Shift" Click="OnSelectionChanged" />
-                </Grid>
+            <TextBlock x:Name="StatusText" TextWrapping="Wrap" Style="{StaticResource PastCaption}" />
 
-                <!-- Key -->
-                <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
-                    <TextBlock Text="Key" VerticalAlignment="Center" Opacity="0.8" />
-                    <ComboBox x:Name="KeyCombo" Width="110" PlaceholderText="Key"
-                              SelectionChanged="OnSelectionChanged" />
-                </StackPanel>
-
-                <!-- Apply + inline result -->
-                <StackPanel Orientation="Horizontal" Spacing="12" Margin="0,4,0,0">
-                    <Button x:Name="ApplyBtn" Content="Apply" Click="OnApply"
-                            Style="{StaticResource AccentButtonStyle}" />
-                    <TextBlock x:Name="StatusText" VerticalAlignment="Center" TextWrapping="Wrap" />
-                </StackPanel>
-
-            </StackPanel>
+        </StackPanel>
     </Grid>
 </Window>
