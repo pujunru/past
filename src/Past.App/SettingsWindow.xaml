@@ -37,6 +37,18 @@
 
             <TextBlock x:Name="StatusText" TextWrapping="Wrap" Style="{StaticResource PastCaption}" />
 
+            <Border Height="1" Margin="0,4"
+                    Background="{ThemeResource CardStrokeColorDefaultBrush}" />
+
+            <TextBlock Text="Behaviour" Style="{StaticResource PastSectionTitle}" />
+
+            <!-- Mirrors the tray's quick toggle; both persist to the same setting. -->
+            <ToggleSwitch x:Name="PasteToggle"
+                          Header="Paste immediately on select"
+                          Toggled="OnPasteToggled" />
+            <TextBlock Style="{StaticResource PastCaption}"
+                       Text="Off: choosing a clip only copies it to the clipboard; you paste it yourself." />
+
         </StackPanel>
     </Grid>
 </Window>

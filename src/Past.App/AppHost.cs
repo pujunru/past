@@ -34,6 +34,7 @@ internal sealed class AppHost
     private OverlayWindow? _overlay;
     private SettingsWindow? _settingsWindow;
     private TaskbarIcon? _tray;
+    private ToggleMenuFlyoutItem? _pasteOnSelectItem;
 
     public void Start()
     {
@@ -117,9 +118,20 @@ internal sealed class AppHost
         }
 
         var current = _hotkey?.ActiveChord ?? HotkeyDefaults.Candidates[0];
-        _settingsWindow = new SettingsWindow(current, TryApplyHotkey);
+        _settingsWindow = new SettingsWindow(
+            current, TryApplyHotkey, _settings.PasteOnSelect, SetPasteOnSelect);
         _settingsWindow.Closed += (_, _) => _settingsWindow = null;
         _settingsWindow.Activate();
+    }
+
+    // Single path for the "paste immediately on select" behaviour, shared by the tray quick
+    // toggle and the settings window, so the two never drift out of sync.
+    private void SetPasteOnSelect(bool value)
+    {
+        _settings.PasteOnSelect = value;
+        _settingsStore!.Save(_settings);
+        if (_pasteOnSelectItem is { } item && item.IsChecked != value)
+            item.IsChecked = value;
     }
 
     // Fires on the pump thread; persist off the UI thread.
@@ -194,11 +206,9 @@ internal sealed class AppHost
             Text = "Paste immediately on select",
             IsChecked = _settings.PasteOnSelect,
         };
-        pasteOnSelect.Click += (_, _) =>
-        {
-            _settings.PasteOnSelect = pasteOnSelect.IsChecked;
-            _settingsStore!.Save(_settings);
-        };
+        // ToggleMenuFlyoutItem flips IsChecked before Click fires, so this is the new value.
+        pasteOnSelect.Click += (_, _) => SetPasteOnSelect(pasteOnSelect.IsChecked);
+        _pasteOnSelectItem = pasteOnSelect;
 
         var clear = new MenuFlyoutItem { Text = "Clear history" };
         clear.Click += async (_, _) => await _history!.ClearAllAsync();

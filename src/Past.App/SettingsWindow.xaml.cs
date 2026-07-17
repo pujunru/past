@@ -37,21 +37,31 @@ public sealed partial class SettingsWindow : Window
     private const int VkRWin = 0x5C;
 
     private readonly Func<uint, uint, bool> _tryApply;
+    private readonly Action<bool> _setPasteOnSelect;
 
     private uint _mods;
     private uint _vk;
     private bool _recording;
+    private bool _initializing = true;
 
     /// <param name="tryApply">
     /// Registers (modifiers, vk) as the live hotkey and persists it, returning success.
     /// </param>
-    public SettingsWindow(HotkeyChord current, Func<uint, uint, bool> tryApply)
+    /// <param name="setPasteOnSelect">Persists the "paste immediately on select" behaviour.</param>
+    public SettingsWindow(
+        HotkeyChord current,
+        Func<uint, uint, bool> tryApply,
+        bool pasteOnSelect,
+        Action<bool> setPasteOnSelect)
     {
         _tryApply = tryApply;
+        _setPasteOnSelect = setPasteOnSelect;
         _mods = current.BareModifiers;
         _vk = current.Vk;
 
         InitializeComponent();
+        PasteToggle.IsOn = pasteOnSelect; // before _initializing clears, so Toggled is a no-op
+        _initializing = false;
 
         Title = "Past — Settings";
         ExtendsContentIntoTitleBar = true; // our accent header is the title bar
@@ -67,7 +77,7 @@ public sealed partial class SettingsWindow : Window
         var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
         var scale = GetDpiForWindow(hwnd) / 96.0;
         if (scale <= 0) scale = 1.0;
-        AppWindow.Resize(new SizeInt32((int)(380 * scale), (int)(260 * scale)));
+        AppWindow.Resize(new SizeInt32((int)(380 * scale), (int)(380 * scale)));
 
         ShowChord();
     }
@@ -136,6 +146,12 @@ public sealed partial class SettingsWindow : Window
             ShowChord();
             SetStatus($"{chord.Display} is in use by another app. Try a different combination.", error: true);
         }
+    }
+
+    private void OnPasteToggled(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        _setPasteOnSelect(PasteToggle.IsOn);
     }
 
     private void ShowChord() => CaptureText.Text = HotkeyChord.From(_mods, _vk).Display;
