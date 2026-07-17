@@ -31,39 +31,77 @@ public sealed class HistoryService
 
     public async Task<CaptureOutcome> CaptureAsync(ClipDraft draft, CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(draft.Content))
+        var clip = draft.ContentType == ClipContentType.Image
+            ? BuildImageClip(draft)
+            : BuildTextClip(draft);
+
+        if (clip is null)
             return CaptureOutcome.Skipped;
 
-        if (draft.Content.Length > _options.MaxItemChars)
-            return CaptureOutcome.Skipped;
-
-        var now = _clock.UtcNow;
-        var hash = ClipHasher.Hash(draft.Content, _options.HashSalt);
-
-        var existing = await _store.FindByHashAsync(hash, ct).ConfigureAwait(false);
+        var existing = await _store.FindByHashAsync(clip.Hash, ct).ConfigureAwait(false);
         if (existing is not null)
         {
             // Duplicate content: surface it to the top rather than storing twice.
-            await _store.TouchAsync(existing.Id, now, ct).ConfigureAwait(false);
+            await _store.TouchAsync(existing.Id, clip.LastUsedUtc, ct).ConfigureAwait(false);
             return CaptureOutcome.Deduped;
         }
-
-        var clip = new Clip
-        {
-            ContentType = ClipContentType.Text,
-            Content = draft.Content,
-            Preview = ClipHasher.MakePreview(draft.Content),
-            Hash = hash,
-            SizeBytes = System.Text.Encoding.UTF8.GetByteCount(draft.Content),
-            SourceApp = draft.SourceApp,
-            CreatedUtc = now,
-            LastUsedUtc = now,
-        };
 
         await _store.InsertAsync(clip, ct).ConfigureAwait(false);
         await _store.TrimToAsync(_options.MaxItems, ct).ConfigureAwait(false);
         return CaptureOutcome.Added;
     }
+
+    private Clip? BuildTextClip(ClipDraft draft)
+    {
+        var content = draft.Text;
+        if (string.IsNullOrWhiteSpace(content))
+            return null;
+
+        if (content.Length > _options.MaxItemChars)
+            return null;
+
+        var now = _clock.UtcNow;
+        return new Clip
+        {
+            ContentType = ClipContentType.Text,
+            Content = content,
+            Preview = ClipHasher.MakePreview(content),
+            Hash = ClipHasher.Hash(content, _options.HashSalt),
+            SizeBytes = System.Text.Encoding.UTF8.GetByteCount(content),
+            SourceApp = draft.SourceApp,
+            CreatedUtc = now,
+            LastUsedUtc = now,
+        };
+    }
+
+    private Clip? BuildImageClip(ClipDraft draft)
+    {
+        var bytes = draft.ImageBytes;
+        if (bytes is null || bytes.Length == 0)
+            return null;
+
+        // Note: the char cap is a text rule and deliberately does not apply here. Image
+        // growth is bounded by MaxItems instead.
+        var now = _clock.UtcNow;
+        return new Clip
+        {
+            ContentType = ClipContentType.Image,
+            Content = string.Empty,
+            Data = bytes,
+            Thumbnail = draft.ThumbnailBytes,
+            PixelWidth = draft.PixelWidth,
+            PixelHeight = draft.PixelHeight,
+            Preview = DescribeImage(draft.PixelWidth, draft.PixelHeight),
+            Hash = ClipHasher.Hash(bytes, _options.HashSalt),
+            SizeBytes = bytes.Length,
+            SourceApp = draft.SourceApp,
+            CreatedUtc = now,
+            LastUsedUtc = now,
+        };
+    }
+
+    private static string DescribeImage(int width, int height) =>
+        width > 0 && height > 0 ? $"Image {width}×{height}" : "Image";
 
     public Task<IReadOnlyList<Clip>> GetRecentAsync(int limit = 200, CancellationToken ct = default)
         => _store.QueryRecentAsync(null, limit, ct);

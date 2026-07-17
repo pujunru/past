@@ -60,5 +60,9 @@ public interface IGlobalHotkey : IDisposable
 public interface IPasteService
 {
     void SetClipboardText(string text);
+
+    /// <summary>Put a PNG-encoded image on the clipboard (converted to the native format).</summary>
+    void SetClipboardImage(byte[] png);
+
     void PasteInto(nint targetWindow);
 }
