@@ -4,7 +4,8 @@ using System.Text;
 namespace Past.Infrastructure.Security;
 
 /// <summary>
-/// AES-256-GCM field encryption. Output layout (base64): [12-byte nonce][16-byte tag][ciphertext].
+/// AES-256-GCM field encryption. Output layout: [12-byte nonce][16-byte tag][ciphertext],
+/// base64-encoded for text columns and raw for BLOB columns.
 /// The key comes from <see cref="DpapiKeyProvider"/>, so the plaintext is bound to the Windows user.
 /// </summary>
 public sealed class AesGcmContentProtector : IContentProtector
@@ -20,36 +21,40 @@ public sealed class AesGcmContentProtector : IContentProtector
         _key = key;
     }
 
-    public string Protect(string plaintext)
+    public string Protect(string plaintext) =>
+        Convert.ToBase64String(ProtectBytes(Encoding.UTF8.GetBytes(plaintext)));
+
+    public string Unprotect(string payload) =>
+        Encoding.UTF8.GetString(UnprotectBytes(Convert.FromBase64String(payload)));
+
+    public byte[] ProtectBytes(byte[] plaintext)
     {
-        var plainBytes = Encoding.UTF8.GetBytes(plaintext);
         var nonce = RandomNumberGenerator.GetBytes(NonceSize);
-        var cipher = new byte[plainBytes.Length];
+        var cipher = new byte[plaintext.Length];
         var tag = new byte[TagSize];
 
         using var aes = new AesGcm(_key, TagSize);
-        aes.Encrypt(nonce, plainBytes, cipher, tag);
+        aes.Encrypt(nonce, plaintext, cipher, tag);
 
         var output = new byte[NonceSize + TagSize + cipher.Length];
         Buffer.BlockCopy(nonce, 0, output, 0, NonceSize);
         Buffer.BlockCopy(tag, 0, output, NonceSize, TagSize);
         Buffer.BlockCopy(cipher, 0, output, NonceSize + TagSize, cipher.Length);
-        return Convert.ToBase64String(output);
+        return output;
     }
 
-    public string Unprotect(string payload)
+    public byte[] UnprotectBytes(byte[] payload)
     {
-        var bytes = Convert.FromBase64String(payload);
-        if (bytes.Length < NonceSize + TagSize)
+        if (payload.Length < NonceSize + TagSize)
             throw new CryptographicException("Payload too short.");
 
-        var nonce = bytes.AsSpan(0, NonceSize);
-        var tag = bytes.AsSpan(NonceSize, TagSize);
-        var cipher = bytes.AsSpan(NonceSize + TagSize);
+        var nonce = payload.AsSpan(0, NonceSize);
+        var tag = payload.AsSpan(NonceSize, TagSize);
+        var cipher = payload.AsSpan(NonceSize + TagSize);
         var plain = new byte[cipher.Length];
 
         using var aes = new AesGcm(_key, TagSize);
         aes.Decrypt(nonce, cipher, tag, plain);
-        return Encoding.UTF8.GetString(plain);
+        return plain;
     }
 }
