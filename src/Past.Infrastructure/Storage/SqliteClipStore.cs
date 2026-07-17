@@ -21,10 +21,16 @@ public sealed class SqliteClipStore : IClipStore, IDisposable
     private readonly SqliteConnection _conn;
     private readonly IContentProtector _protector;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly Action<long, Exception>? _onRowError;
 
-    public SqliteClipStore(string connectionString, IContentProtector protector)
+    /// <param name="onRowError">
+    /// Called (with the row id) when a row cannot be decoded and is skipped, for logging.
+    /// </param>
+    public SqliteClipStore(string connectionString, IContentProtector protector,
+                           Action<long, Exception>? onRowError = null)
     {
         _protector = protector;
+        _onRowError = onRowError;
         _conn = new SqliteConnection(connectionString);
         _conn.Open();
         Initialize();
@@ -156,7 +162,20 @@ public sealed class SqliteClipStore : IClipStore, IDisposable
             using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
             while (await reader.ReadAsync(ct).ConfigureAwait(false))
             {
-                var clip = Map(reader);
+                Clip clip;
+                try
+                {
+                    clip = Map(reader);
+                }
+                catch (Exception ex)
+                {
+                    // One unreadable row (e.g. encrypted under a different key, or corrupted)
+                    // must not take the whole list down and leave the overlay empty. Skip it.
+                    var id = reader.GetInt64(reader.GetOrdinal("Id"));
+                    _onRowError?.Invoke(id, ex);
+                    continue;
+                }
+
                 // Match the preview as well as the content, so image clips (whose content is
                 // empty) are still findable by typing e.g. "image".
                 if (string.IsNullOrEmpty(search) ||
